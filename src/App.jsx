@@ -156,6 +156,128 @@ const css = `
   .fade:nth-child(3){animation-delay:.12s;}
 `;
 
+const TYPE_CONFIG = id => EXERCISE_TYPES.find(t => t.id === id) || EXERCISE_TYPES[0];
+
+const Hoy = ({ total, doneCount, prog, exercises, done, answers, onAnswer, onSubmit }) => (
+  <div>
+    <p className="stitle">Hoy</p>
+    <p className="ssub">{new Date().toLocaleDateString("es-ES", { weekday:"long", day:"numeric", month:"long" })}</p>
+
+    {total > 0 && (
+      <>
+        <div style={{ display:"flex", justifyContent:"space-between", fontSize:"0.75rem", color:"var(--muted)", marginBottom:4 }}>
+          <span>{doneCount} de {total} completados</span>
+          <span>{Math.round(prog * 100)}%</span>
+        </div>
+        <div className="pw"><div className="pf" style={{ width:`${prog*100}%` }}/></div>
+      </>
+    )}
+
+    {exercises.map(ex => {
+      const t = TYPE_CONFIG(ex.type);
+      const isDone = done[ex.id];
+      return (
+        <div key={ex.id} className="card fade">
+          <div className="ch">
+            <div className="icon" style={{ background: t.iconBg }}>{t.icon}</div>
+            <div style={{ flex:1 }}>
+              <div className="etype">{t.label}</div>
+              <div className="etitle">{ex.title}</div>
+            </div>
+            {isDone && <span className="done">✓</span>}
+          </div>
+          <div className="cb">
+            <p className="prompt">{ex.prompt}</p>
+            {!isDone ? (
+              <textarea
+                placeholder="Escribe tu reflexión aquí..."
+                value={answers[ex.id] || ""}
+                onChange={e => onAnswer(ex.id, e.target.value)}
+              />
+            ) : (
+              <div className="atxt">{answers[ex.id] || "—"}</div>
+            )}
+          </div>
+          {!isDone && (
+            <div className="cf">
+              <button className="btnp"
+                disabled={!(answers[ex.id]||"").trim()}
+                onClick={() => onSubmit(ex)}>
+                Guardar reflexión
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    })}
+
+    {doneCount === total && total > 0 && (
+      <div className="complete">
+        <div style={{ fontSize:"2.5rem", marginBottom:8 }}>🎯</div>
+        <p style={{ fontFamily:"'DM Serif Display',serif", fontSize:"1.2rem" }}>¡Sesión completa!</p>
+        <p style={{ fontSize:"0.78rem", color:"var(--muted)", marginTop:6 }}>Vuelve mañana para nuevos ejercicios</p>
+      </div>
+    )}
+  </div>
+);
+
+const Stats = ({ streak, log }) => {
+  const counts = {}; log.forEach(e => { counts[e.exType] = (counts[e.exType]||0)+1; });
+  const days = [...new Set(log.map(e => e.date))].length;
+  const top = Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+  const mx = Math.max(...Object.values(counts), 1);
+  return (
+    <div>
+      <p className="stitle">Progreso</p>
+      <p className="ssub">Tu evolución en pensamiento crítico</p>
+      <div className="sgrid">
+        <div className="sbox"><div className="snum">{streak}</div><div className="slabel">Días de racha 🔥</div></div>
+        <div className="sbox"><div className="snum">{log.length}</div><div className="slabel">Reflexiones totales</div></div>
+        <div className="sbox"><div className="snum">{days}</div><div className="slabel">Días activos</div></div>
+        <div className="sbox"><div className="snum" style={{fontSize:"1.3rem"}}>{top ? TYPE_CONFIG(top[0]).icon : "—"}</div><div className="slabel">{top ? TYPE_CONFIG(top[0]).label : "Sin datos aún"}</div></div>
+      </div>
+      <p style={{fontFamily:"'DM Serif Display',serif",fontSize:"1.1rem",marginBottom:14}}>Por tipo de ejercicio</p>
+      {EXERCISE_TYPES.map(t => {
+        const c = counts[t.id] || 0;
+        return (
+          <div key={t.id} style={{marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:"0.75rem",marginBottom:3}}>
+              <span>{t.icon} {t.label}</span>
+              <span style={{color:"var(--muted)",fontFamily:"'DM Mono',monospace"}}>{c}</span>
+            </div>
+            <div style={{height:5,background:"var(--warm)",borderRadius:3,overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${(c/mx)*100}%`,background:"var(--accent)",borderRadius:3}}/>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const Historial = ({ log }) => (
+  <div>
+    <p className="stitle">Historial</p>
+    <p className="ssub">Tus reflexiones anteriores</p>
+    {!log.length && (
+      <div className="empty">
+        <div style={{fontSize:"2rem",marginBottom:8}}>📖</div>
+        <p style={{fontSize:"0.85rem",lineHeight:1.5}}>Aquí aparecerán tus reflexiones cuando guardes ejercicios.</p>
+      </div>
+    )}
+    {log.map((e, i) => {
+      const t = TYPE_CONFIG(e.exType);
+      return (
+        <div key={i} className="hentry">
+          <div className="hdate">{t.icon} {new Date(e.date+"T12:00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short",year:"numeric"})}</div>
+          <div className="htitle">{e.exTitle}</div>
+          <div className="hanswer">{e.answer}</div>
+        </div>
+      );
+    })}
+  </div>
+);
+
 export default function App() {
   const [tab, setTab]       = useState("hoy");
   const [streak, setStreak] = useState(0);
@@ -187,21 +309,28 @@ export default function App() {
       if (!loaded) {
         const exs = getThreeForToday();
         setEx(exs);
-        await storageSet(STORAGE_KEYS.todayExercises, { date: todayStr(), exercises: exs, done: {}, answers: {} });
+        const st = { date: todayStr(), exercises: exs, done: {}, answers: {} };
+        await storageSet(STORAGE_KEYS.todayExercises, st);
       }
     })();
   }, []);
 
-  async function save(d, ans) {
+  async function updateToday(d, ans) {
     await storageSet(STORAGE_KEYS.todayExercises, { date: todayStr(), exercises, done: d, answers: ans });
   }
 
-  async function submit(ex) {
+  async function handleAnswer(id, val) {
+    const na = { ...answers, [id]: val };
+    setAns(na);
+    await updateToday(done, na);
+  }
+
+  async function handleSubmit(ex) {
     const ans = answers[ex.id] || "";
     if (!ans.trim()) return;
     const nd = { ...done, [ex.id]: true };
     setDone(nd);
-    await save(nd, answers);
+    await updateToday(nd, answers);
 
     const entry = { date: todayStr(), exTitle: ex.title, exType: ex.type, answer: ans };
     const nl = [entry, ...log].slice(0, 200);
@@ -223,132 +352,6 @@ export default function App() {
   const doneCount = Object.keys(done).length;
   const total = exercises.length;
   const prog = total ? doneCount / total : 0;
-  const tc = id => EXERCISE_TYPES.find(t => t.id === id) || EXERCISE_TYPES[0];
-
-  const Hoy = () => (
-    <div>
-      <p className="stitle">Hoy</p>
-      <p className="ssub">{new Date().toLocaleDateString("es-ES", { weekday:"long", day:"numeric", month:"long" })}</p>
-
-      {total > 0 && (
-        <>
-          <div style={{ display:"flex", justifyContent:"space-between", fontSize:"0.75rem", color:"var(--muted)", marginBottom:4 }}>
-            <span>{doneCount} de {total} completados</span>
-            <span>{Math.round(prog * 100)}%</span>
-          </div>
-          <div className="pw"><div className="pf" style={{ width:`${prog*100}%` }}/></div>
-        </>
-      )}
-
-      {exercises.map(ex => {
-        const t = tc(ex.type);
-        const isDone = done[ex.id];
-        return (
-          <div key={ex.id} className="card fade">
-            <div className="ch">
-              <div className="icon" style={{ background: t.iconBg }}>{t.icon}</div>
-              <div style={{ flex:1 }}>
-                <div className="etype">{t.label}</div>
-                <div className="etitle">{ex.title}</div>
-              </div>
-              {isDone && <span className="done">✓</span>}
-            </div>
-            <div className="cb">
-              <p className="prompt">{ex.prompt}</p>
-              {!isDone ? (
-                <textarea
-                  placeholder="Escribe tu reflexión aquí..."
-                  value={answers[ex.id] || ""}
-                  onChange={e => {
-                    const na = { ...answers, [ex.id]: e.target.value };
-                    setAns(na);
-                    save(done, na);
-                  }}
-                />
-              ) : (
-                <div className="atxt">{answers[ex.id] || "—"}</div>
-              )}
-            </div>
-            {!isDone && (
-              <div className="cf">
-                <button className="btnp"
-                  disabled={!(answers[ex.id]||"").trim()}
-                  onClick={() => submit(ex)}>
-                  Guardar reflexión
-                </button>
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {doneCount === total && total > 0 && (
-        <div className="complete">
-          <div style={{ fontSize:"2.5rem", marginBottom:8 }}>🎯</div>
-          <p style={{ fontFamily:"'DM Serif Display',serif", fontSize:"1.2rem" }}>¡Sesión completa!</p>
-          <p style={{ fontSize:"0.8rem", color:"var(--muted)", marginTop:4 }}>Racha actual: {streak} día{streak!==1?"s":""} 🔥</p>
-          <p style={{ fontSize:"0.78rem", color:"var(--muted)", marginTop:6 }}>Vuelve mañana para nuevos ejercicios</p>
-        </div>
-      )}
-    </div>
-  );
-
-  const Stats = () => {
-    const counts = {}; log.forEach(e => { counts[e.exType] = (counts[e.exType]||0)+1; });
-    const days = [...new Set(log.map(e => e.date))].length;
-    const top = Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
-    const mx = Math.max(...Object.values(counts), 1);
-    return (
-      <div>
-        <p className="stitle">Progreso</p>
-        <p className="ssub">Tu evolución en pensamiento crítico</p>
-        <div className="sgrid">
-          <div className="sbox"><div className="snum">{streak}</div><div className="slabel">Días de racha 🔥</div></div>
-          <div className="sbox"><div className="snum">{log.length}</div><div className="slabel">Reflexiones totales</div></div>
-          <div className="sbox"><div className="snum">{days}</div><div className="slabel">Días activos</div></div>
-          <div className="sbox"><div className="snum" style={{fontSize:"1.3rem"}}>{top ? tc(top[0]).icon : "—"}</div><div className="slabel">{top ? tc(top[0]).label : "Sin datos aún"}</div></div>
-        </div>
-        <p style={{fontFamily:"'DM Serif Display',serif",fontSize:"1.1rem",marginBottom:14}}>Por tipo de ejercicio</p>
-        {EXERCISE_TYPES.map(t => {
-          const c = counts[t.id] || 0;
-          return (
-            <div key={t.id} style={{marginBottom:10}}>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:"0.75rem",marginBottom:3}}>
-                <span>{t.icon} {t.label}</span>
-                <span style={{color:"var(--muted)",fontFamily:"'DM Mono',monospace"}}>{c}</span>
-              </div>
-              <div style={{height:5,background:"var(--warm)",borderRadius:3,overflow:"hidden"}}>
-                <div style={{height:"100%",width:`${(c/mx)*100}%`,background:"var(--accent)",borderRadius:3}}/>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  const Historial = () => (
-    <div>
-      <p className="stitle">Historial</p>
-      <p className="ssub">Tus reflexiones anteriores</p>
-      {!log.length && (
-        <div className="empty">
-          <div style={{fontSize:"2rem",marginBottom:8}}>📖</div>
-          <p style={{fontSize:"0.85rem",lineHeight:1.5}}>Aquí aparecerán tus reflexiones cuando guardes ejercicios.</p>
-        </div>
-      )}
-      {log.map((e, i) => {
-        const t = tc(e.exType);
-        return (
-          <div key={i} className="hentry">
-            <div className="hdate">{t.icon} {new Date(e.date+"T12:00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short",year:"numeric"})}</div>
-            <div className="htitle">{e.exTitle}</div>
-            <div className="hanswer">{e.answer}</div>
-          </div>
-        );
-      })}
-    </div>
-  );
 
   return (
     <>
@@ -359,14 +362,25 @@ export default function App() {
           <div className="badge">🔥 {streak} días</div>
         </div>
         <div className="nav">
-          {[["hoy","Hoy"],["stats","Stats"],["historial","Historial"]].map(([id,l]) => (
-            <button key={id} className={`nb ${tab===id?"on":""}`} onClick={()=>setTab(id)}>{l}</button>
-          ))}
+          <button className={`nb ${tab==="hoy"?"on":""}`} onClick={()=>setTab("hoy")}>Hoy</button>
+          <button className={`nb ${tab==="stats"?"on":""}`} onClick={()=>setTab("stats")}>Stats</button>
+          <button className={`nb ${tab==="historial"?"on":""}`} onClick={()=>setTab("historial")}>Historial</button>
         </div>
         <div className="main">
-          {tab==="hoy"       && <Hoy/>}
-          {tab==="stats"     && <Stats/>}
-          {tab==="historial" && <Historial/>}
+          {tab==="hoy" && (
+            <Hoy 
+              total={total} 
+              doneCount={doneCount} 
+              prog={prog} 
+              exercises={exercises} 
+              done={done} 
+              answers={answers} 
+              onAnswer={handleAnswer} 
+              onSubmit={handleSubmit} 
+            />
+          )}
+          {tab==="stats"     && <Stats streak={streak} log={log} />}
+          {tab==="historial" && <Historial log={log} />}
         </div>
       </div>
     </>
